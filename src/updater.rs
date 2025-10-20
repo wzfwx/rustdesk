@@ -80,52 +80,20 @@ fn start_auto_update_check() -> Sender<UpdateMsg> {
     return tx;
 }
 
-fn start_auto_update_check_(rx_msg: Receiver<UpdateMsg>) {
-    std::thread::sleep(Duration::from_secs(30));
-    if let Err(e) = check_update(false) {
-        log::error!("Error checking for updates: {}", e);
-    }
-
-    const MIN_INTERVAL: Duration = Duration::from_secs(60 * 10);
-    const RETRY_INTERVAL: Duration = Duration::from_secs(60 * 30);
-    let mut last_check_time = Instant::now();
-    let mut check_interval = DUR_ONE_DAY;
+fn start_auto_update_check_(_rx_msg: Receiver<UpdateMsg>) {
+    log::info!("Auto update check disabled in this build.");
     loop {
-        let recv_res = rx_msg.recv_timeout(check_interval);
-        match &recv_res {
-            Ok(UpdateMsg::CheckUpdate) | Err(_) => {
-                if last_check_time.elapsed() < MIN_INTERVAL {
-                    // log::debug!("Update check skipped due to minimum interval.");
-                    continue;
-                }
-                // Don't check update if there are alive connections.
-                if !has_no_active_conns() {
-                    check_interval = RETRY_INTERVAL;
-                    continue;
-                }
-                if let Err(e) = check_update(matches!(recv_res, Ok(UpdateMsg::CheckUpdate))) {
-                    log::error!("Error checking for updates: {}", e);
-                    check_interval = RETRY_INTERVAL;
-                } else {
-                    last_check_time = Instant::now();
-                    check_interval = DUR_ONE_DAY;
-                }
-            }
-            Ok(UpdateMsg::Exit) => break,
+        // 等待退出信号（不再执行任何更新操作）
+        if let Ok(UpdateMsg::Exit) = _rx_msg.recv() {
+            break;
         }
     }
 }
 
-fn check_update(manually: bool) -> ResultType<()> {
-    #[cfg(target_os = "windows")]
-    let is_msi = crate::platform::is_msi_installed()?;
-    if !(manually || config::Config::get_bool_option(config::keys::OPTION_ALLOW_AUTO_UPDATE)) {
-        return Ok(());
-    }
-    if !do_check_software_update().is_ok() {
-        // ignore
-        return Ok(());
-    }
+fn check_update(_manually: bool) -> ResultType<()> {
+    log::info!("Software update check disabled in this build.");
+    Ok(())
+}
 
     let update_url = crate::common::SOFTWARE_UPDATE_URL.lock().unwrap().clone();
     if update_url.is_empty() {
