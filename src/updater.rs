@@ -1,5 +1,4 @@
-use crate::{common::do_check_software_update, hbbs_http::create_http_client};
-use hbb_common::{bail, config, log, ResultType};
+use hbb_common::{log, ResultType};
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -8,7 +7,7 @@ use std::{
         mpsc::{channel, Receiver, Sender},
         Mutex,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 enum UpdateMsg {
@@ -17,12 +16,10 @@ enum UpdateMsg {
 }
 
 lazy_static::lazy_static! {
-    static ref TX_MSG : Mutex<Sender<UpdateMsg>> = Mutex::new(start_auto_update_check());
+    static ref TX_MSG: Mutex<Sender<UpdateMsg>> = Mutex::new(start_auto_update_check());
 }
 
 static CONTROLLING_SESSION_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-const DUR_ONE_DAY: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub fn update_controlling_session_count(count: usize) {
     CONTROLLING_SESSION_COUNT.store(count, Ordering::SeqCst);
@@ -34,8 +31,7 @@ pub fn start_auto_update() {
 
 #[allow(dead_code)]
 pub fn manually_check_update() -> ResultType<()> {
-    let sender = TX_MSG.lock().unwrap();
-    sender.send(UpdateMsg::CheckUpdate)?;
+    log::info!("Manual update check disabled in this build.");
     Ok(())
 }
 
@@ -47,8 +43,8 @@ pub fn stop_auto_update() {
 
 #[inline]
 fn has_no_active_conns() -> bool {
-    let conns = crate::Connection::alive_conns();
-    conns.is_empty() && has_no_controlling_conns()
+    // 保留函数签名以兼容其他模块
+    true
 }
 
 #[cfg(any(not(target_os = "windows"), feature = "flutter"))]
@@ -58,32 +54,18 @@ fn has_no_controlling_conns() -> bool {
 
 #[cfg(not(any(not(target_os = "windows"), feature = "flutter")))]
 fn has_no_controlling_conns() -> bool {
-    let app_exe = format!("{}.exe", crate::get_app_name().to_lowercase());
-    for arg in [
-        "--connect",
-        "--play",
-        "--file-transfer",
-        "--view-camera",
-        "--port-forward",
-        "--rdp",
-    ] {
-        if !crate::platform::get_pids_of_process_with_first_arg(&app_exe, arg).is_empty() {
-            return false;
-        }
-    }
     true
 }
 
 fn start_auto_update_check() -> Sender<UpdateMsg> {
     let (tx, rx) = channel();
     std::thread::spawn(move || start_auto_update_check_(rx));
-    return tx;
+    tx
 }
 
 fn start_auto_update_check_(_rx_msg: Receiver<UpdateMsg>) {
-    log::info!("Auto update check disabled in this build.");
+    log::info!("Auto update check completely disabled in this build.");
     loop {
-        // 等待退出信号（不再执行任何更新操作）
         if let Ok(UpdateMsg::Exit) = _rx_msg.recv() {
             break;
         }
@@ -96,54 +78,10 @@ fn check_update(_manually: bool) -> ResultType<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
-    log::debug!("New version is downloaded, update begin, is msi: {is_msi}, version: {version}, file: {:?}", file_path.to_str());
-    if let Some(p) = file_path.to_str() {
-        if let Some(session_id) = crate::platform::get_current_process_session_id() {
-            if is_msi {
-                match crate::platform::update_me_msi(p, true) {
-                    Ok(_) => {
-                        log::debug!("New version \"{}\" updated.", version);
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to install the new msi version  \"{}\": {}",
-                            version,
-                            e
-                        );
-                    }
-                }
-            } else {
-                match crate::platform::launch_privileged_process(
-                    session_id,
-                    &format!("{} --update", p),
-                ) {
-                    Ok(h) => {
-                        if h.is_null() {
-                            log::error!("Failed to update to the new version: {}", version);
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to run the new version: {}", e);
-                    }
-                }
-            }
-        } else {
-            log::error!(
-                "Failed to get the current process session id, Error {}",
-                io::Error::last_os_error()
-            );
-        }
-    } else {
-        // unreachable!()
-        log::error!(
-            "Failed to convert the file path to string: {}",
-            file_path.display()
-        );
-    }
+fn update_new_version(_is_msi: bool, _version: &str, _file_path: &PathBuf) {
+    log::info!("Update feature disabled. Skipping new version installation.");
 }
 
-pub fn get_download_file_from_url(url: &str) -> Option<PathBuf> {
-    let filename = url.split('/').last()?;
-    Some(std::env::temp_dir().join(filename))
+pub fn get_download_file_from_url(_url: &str) -> Option<PathBuf> {
+    None
 }
